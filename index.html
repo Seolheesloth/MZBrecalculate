@@ -735,10 +735,17 @@ async function initFBInner(){
     const base=`https://www.gstatic.com/firebasejs/${FBV}/`;
     const [A,U,D]=await Promise.all([import(base+'firebase-app.js'),import(base+'firebase-auth.js'),import(base+'firebase-database.js')]);
     const app=A.initializeApp(FB_CFG);
-    const auth=U.getAuth(app), db=D.getDatabase(app);
+    let auth;
+    try{auth=U.initializeAuth(app,{persistence:[U.indexedDBLocalPersistence,U.browserLocalPersistence],popupRedirectResolver:U.browserPopupRedirectResolver});}
+    catch(e){auth=U.getAuth(app);}
+    const db=D.getDatabase(app);
+    $('authStatus').textContent='로그인 상태 확인 중…';
+    let seen=false;
+    setTimeout(()=>{if(!seen)$('authStatus').textContent='로그인 상태를 확인하지 못했습니다. 인터넷 연결을 확인하거나 로그인 버튼을 눌러 주세요.';},15000);
     FA={U,D,auth,db};
     U.getRedirectResult(auth).catch(()=>{});
     U.onAuthStateChanged(auth,user=>{
+      seen=true;
       setAuthUI(user);
       if(unsub){unsub();unsub=null;}
       fb=null;
