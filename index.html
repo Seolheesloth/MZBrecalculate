@@ -306,7 +306,7 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 
 <script>
 /* ---------- build & error capture ---------- */
-const BUILD='build 0921-1';
+const BUILD='build 0921-2';
 function showErr(msg){try{const b=document.getElementById('errBox');b.classList.remove('hidden');b.textContent='오류: '+msg+' ('+BUILD+')';}catch(e){}}
 window.addEventListener('error',e=>showErr((e.message||'unknown')+(e.lineno?' @'+e.lineno:'')));
 window.addEventListener('unhandledrejection',e=>showErr('promise: '+((e.reason&&(e.reason.code||e.reason.message))||e.reason)));
@@ -702,7 +702,7 @@ function saveSettings(){try{localStorage.setItem(LS_SET,JSON.stringify(settings)
 function pushShared(){S.shared={fhKey:settings.fhKey||'',dec:settings.dec??2};save();}
 function pullShared(){
   if(!S.shared)return;
-  if(S.shared.fhKey&&!settings.fhKey){settings.fhKey=S.shared.fhKey;$('fhKey').value=settings.fhKey;}
+  if(S.shared.fhKey&&S.shared.fhKey!==settings.fhKey){settings.fhKey=S.shared.fhKey;$('fhKey').value=settings.fhKey;}
   if(S.shared.dec!=null&&S.shared.dec!==settings.dec){settings.dec=S.shared.dec;$('decSel').value=String(settings.dec);}
   saveSettings();
 }
@@ -771,6 +771,8 @@ async function initFBInner(){
           try{localStorage.setItem(LS_KEY,JSON.stringify(S));}catch(e){}
           pullShared();renderAll();
         }else if((v.updatedAt||0)<(S.updatedAt||0)){save();}
+        if(v.shared){S.shared=v.shared;pullShared();}
+        if(settings.fhKey&&!(v.shared&&v.shared.fhKey))pushShared();
         setSync('동기화됨');
       },err=>{setSync('동기화 오류');$('authStatus').textContent=`${user.email||''} 로그인됨, 하지만 데이터베이스 접근이 거부됐습니다 (${err&&err.code||'오류'}). Firebase 보안 규칙을 확인하세요.`;});
     });
