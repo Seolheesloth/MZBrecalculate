@@ -725,6 +725,7 @@ function initFB(){
   const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('시간 초과')),20000));
   fbReady=Promise.race([initFBInner(),timeout]).then(()=>true).catch(e=>{
     fbReady=null;fbErr=(e&&(e.code||e.message))||'오류';
+    $('btnLogin').classList.remove('hidden');
     $('authStatus').textContent='동기화 모듈을 불러오지 못했습니다 ('+fbErr+'). 인터넷 연결을 확인하고 로그인 버튼을 다시 눌러 주세요.';
     setSync('이 기기에만 저장');return false;
   });
@@ -740,8 +741,9 @@ async function initFBInner(){
     catch(e){auth=U.getAuth(app);}
     const db=D.getDatabase(app);
     $('authStatus').textContent='로그인 상태 확인 중…';
+    $('btnLogin').classList.add('hidden');
     let seen=false;
-    setTimeout(()=>{if(!seen)$('authStatus').textContent='로그인 상태를 확인하지 못했습니다. 인터넷 연결을 확인하거나 로그인 버튼을 눌러 주세요.';},15000);
+    setTimeout(()=>{if(!seen){$('btnLogin').classList.remove('hidden');}if(!seen)$('authStatus').textContent='로그인 상태를 확인하지 못했습니다. 인터넷 연결을 확인하거나 로그인 버튼을 눌러 주세요.';},15000);
     FA={U,D,auth,db};
     U.getRedirectResult(auth).catch(()=>{});
     U.onAuthStateChanged(auth,user=>{
@@ -775,6 +777,8 @@ $('btnLogin').onclick=async()=>{
     if(!ok||!FA)return;
   }
   const {U,auth}=FA, prov=new U.GoogleAuthProvider();
+  if(auth.currentUser){setAuthUI(auth.currentUser);return;}
+  try{history.replaceState(null,'',location.origin+location.pathname);}catch(e){}
   try{await U.signInWithPopup(auth,prov);}
   catch(e){
     if(/popup-blocked|operation-not-supported|cancelled-popup/.test(e.code||''))U.signInWithRedirect(auth,prov);
