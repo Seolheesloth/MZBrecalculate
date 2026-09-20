@@ -79,6 +79,37 @@ button{font-family:inherit}
 .apply-bar{position:sticky;bottom:12px;margin-top:16px}
 .apply-bar .btn{width:100%;padding:14px;font-size:16px;box-shadow:0 6px 18px rgba(0,0,0,.12)}
 
+/* position cards */
+.pos{display:grid;grid-template-columns:26px minmax(0,1fr) auto 34px;gap:10px;align-items:center;padding:12px 8px 12px 4px;border-top:1px solid var(--line)}
+.pos:first-child{border-top:0}
+.pos .no{color:var(--muted);font-size:13px;text-align:right;align-self:start;padding-top:3px}
+.pos .id{align-self:start;min-width:0}
+.pos .nm{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tgt{text-align:right;line-height:1.35}
+.tgt .sh b{font-size:20px;font-weight:700}
+.tgt .sh span{font-size:12px;color:var(--muted);margin-left:3px}
+.tgt .meta{font-size:12px;color:var(--muted);margin-top:2px}
+.pct{display:inline-block;background:var(--bg);color:var(--ink);font-weight:500;border-radius:4px;padding:0 6px;margin-left:6px}
+.tgt .hold{font-size:12px;color:var(--muted);margin-top:2px}
+.tgt .act{font-size:17px;font-weight:700;margin-top:2px}
+.tgt .act small{font-size:12px;font-weight:400;color:var(--muted);margin-left:2px}
+.act.buy{color:var(--buy)} .act.sell{color:var(--sell)}
+.act.ok{font-size:13px!important;font-weight:400!important;color:var(--muted)}
+.pos.same .tgt .sh b{color:var(--muted)}
+.pos.done{opacity:.45}
+.pos .ck{display:grid;place-items:center}
+.pos .check{width:28px;height:28px}
+.pos.done .check{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.sortbar{display:flex;align-items:center;gap:4px;margin:16px 2px 8px;font-size:13px;color:var(--muted)}
+.sortbar span{margin-right:4px}
+.sortbar button{border:1px solid var(--line);background:var(--surface);color:var(--muted);font:inherit;font-size:13px;padding:4px 10px;border-radius:6px;cursor:pointer}
+.sortbar button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+td.mut{color:var(--muted);font-size:14px}
+.tbl table{min-width:440px}
+th{white-space:nowrap}
+input.q{min-width:76px}
+td.mut{white-space:nowrap}
+
 /* tables / forms */
 table{width:100%;border-collapse:collapse}
 .tbl{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
@@ -153,7 +184,7 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
       </div>
     </div>
     <div class="tbl"><div class="tbl-scroll"><table>
-      <thead><tr><th class="no"></th><th><button class="sort" data-hsort="t">종목<span class="arr"></span></button></th><th style="text-align:right"><button class="sort" data-hsort="qty">보유 수량<span class="arr"></span></button></th><th></th></tr></thead>
+      <thead><tr><th class="no"></th><th><button class="sort" data-hsort="t">종목<span class="arr"></span></button></th><th style="text-align:right"><button class="sort" data-hsort="w">비중<span class="arr"></span></button></th><th style="text-align:right"><button class="sort" data-hsort="a">배분 금액<span class="arr"></span></button></th><th style="text-align:right"><button class="sort" data-hsort="qty">보유 수량<span class="arr"></span></button></th><th></th></tr></thead>
       <tbody id="holdBody"></tbody>
     </table></div></div>
     <div class="card" style="margin-top:12px">
@@ -221,7 +252,7 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
     <div id="stepPreview" class="hidden">
       <p class="help" id="previewInfo"></p>
       <div class="tbl"><div class="tbl-scroll"><table>
-        <thead><tr><th class="no"></th><th><button class="sort" data-psort="t">종목<span class="arr"></span></button></th><th style="text-align:right"><button class="sort" data-psort="qty">수량<span class="arr"></span></button></th><th style="text-align:right"><button class="sort" data-psort="w">비중 %<span class="arr"></span></button></th><th></th></tr></thead>
+        <thead><tr><th class="no"></th><th><button class="sort" data-psort="t">종목<span class="arr"></span></button></th><th style="text-align:right"><button class="sort" data-psort="qty">수량<span class="arr"></span></button></th><th style="text-align:right"><button class="sort" data-psort="w">비중 %<span class="arr"></span></button></th><th style="text-align:right"><button class="sort" data-psort="a">배분 금액<span class="arr"></span></button></th><th></th></tr></thead>
         <tbody id="previewBody"></tbody>
       </table></div></div>
       <div class="row-actions" style="margin-top:8px"><button class="btn small" id="btnAddPrev">종목 추가</button></div>
@@ -238,9 +269,9 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 <script>
 /* ---------- state ---------- */
 const LS_KEY='pioneerRebal:v1', LS_SET='pioneerRebal:settings';
-const blank=()=>({holdings:{},target:null,done:{},prices:{},history:[],updatedAt:0});
+const blank=()=>({holdings:{},meta:{},metaDate:0,target:null,done:{},prices:{},history:[],updatedAt:0});
 let S=blank();
-let settings={fhKey:'',fbCfg:'',dec:2};
+let settings={fhKey:'',fbCfg:'',dec:2,tsort:'t'};
 let fb=null; // {db, ref, set}
 let sheetMode='target';
 let preview=[];
@@ -260,6 +291,7 @@ const r4=n=>Math.round((+n||0)*1e4)/1e4;
 const rq=n=>{const k=10**(settings.dec??2);return Math.round((+n||0)*k)/k;};
 const fq=n=>r4(n).toLocaleString('en-US',{maximumFractionDigits:4});
 const toQ=v=>Math.max(0,r4(parseFloat(String(v).replace(/[$,\s]/g,''))||0));
+const fmt$c=n=>'$'+(+n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmt$=n=>(n<0?'−':'')+'$'+Math.abs(n).toLocaleString('en-US',{maximumFractionDigits:0});
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),1800);}
 function setSync(m){$('syncState').textContent=m;}
@@ -271,14 +303,14 @@ function parseOneTable(lines){
   if(hi<0)return null;
   const H=lines[hi].split('\t').map(h=>h.replace(/\s+/g,''));
   const fi=re=>H.findIndex(h=>re.test(h));
-  const tI=fi(/티커|ticker/i), qI=fi(/주식수|수량|shares|qty/i), wI=fi(/배분비중|^비중|weight/i), aI=fi(/금액|amount/i);
+  const tI=fi(/티커|ticker/i), qI=fi(/주식수|수량|shares|qty/i), wI=fi(/배분비중|^비중|weight/i), aI=fi(/금액|amount/i), nI=fi(/종목명|회사명|name/i), pI=fi(/^종가|현재가|close/i);
   const num=v=>{const x=parseFloat(String(v||'').replace(/[$,%\s+]/g,''));return isNaN(x)?null:x;};
   const rows=[];
   for(const l of lines.slice(hi+1)){
     const c=l.split('\t');
     const m=(c[tI]||'').trim().match(/^\$?([A-Z]{1,5}(?:[.\-][A-Z]{1,2})?)\b/);
     if(!m)continue;
-    rows.push({t:m[1],qty:qI>=0?num(c[qI]):undefined,w:wI>=0?num(c[wI]):undefined,a:aI>=0?num(c[aI]):undefined});
+    rows.push({t:m[1],qty:qI>=0?num(c[qI]):undefined,w:wI>=0?num(c[wI]):undefined,a:aI>=0?num(c[aI]):undefined,p:pI>=0?num(c[pI]):undefined,name:nI>=0?(c[nI]||'').trim():undefined});
   }
   return rows.length?rows:null;
 }
@@ -288,17 +320,19 @@ function parseTable(text){
   for(const b of blocks){
     const rows=parseOneTable(b);if(!rows)continue;
     rows.forEach(r=>{
-      const o=M.get(r.t)||{t:r.t,qty:null,w:null,a:null};
+      const o=M.get(r.t)||{t:r.t,qty:null,w:null,a:null,p:null,name:''};
       if(r.qty!==undefined&&r.qty!==null){o.qty=r4(r.qty);anyQ=true;}
       if(r.w!=null)o.w=r.w;
       if(r.a!=null)o.a=r.a;
+      if(r.p!=null)o.p=r.p;
+      if(r.name)o.name=r.name;
       M.set(r.t,o);
     });
   }
   if(!anyQ)return null;
   const out=[...M.values()].filter(r=>r.qty!=null);
   const tot=out.reduce((s,r)=>s+(r.a||0),0);
-  out.forEach(r=>{if(r.w==null&&tot>0&&r.a!=null)r.w=Math.round(r.a/tot*1000)/10;delete r.a;});
+  out.forEach(r=>{if(r.w==null&&tot>0&&r.a!=null)r.w=Math.round(r.a/tot*1000)/10;});
   return out;
 }
 function parseList(text){
@@ -323,21 +357,119 @@ function parseList(text){
   return [...map.values()];
 }
 
-/* ---------- diff ---------- */
+/* ---------- rows ---------- */
+function metaOf(t){return (S.target&&S.target[t])||S.meta[t]||{};}
+function priceOf(t){
+  if(S.prices[t])return {v:S.prices[t],src:'live'};
+  const m=metaOf(t);
+  if(m.p)return {v:m.p,src:'list'};
+  if(m.a&&m.qty)return {v:m.a/m.qty,src:'list'};
+  const h=S.meta[t]||{};
+  if(h.p)return {v:h.p,src:'list'};
+  if(h.a&&h.qty)return {v:h.a/h.qty,src:'list'};
+  return null;
+}
 function diff(){
   if(!S.target)return null;
   const tk=new Set([...Object.keys(S.holdings),...Object.keys(S.target)].filter(t=>t!=='__date'));
   const out=[];
   tk.forEach(t=>{
-    const cur=r4(S.holdings[t]), tg=S.target[t]?rq(S.target[t].qty):0, d=rq(tg-cur);
-    let kind= d===0?'same': d>0?'buy':'sell';
-    let tag= cur===0&&tg>0?'new': tg===0&&cur>0?'out':'';
-    out.push({t,cur,tg,d,kind,tag,w:S.target[t]?.w});
+    const T=S.target[t]||{}, H=S.meta[t]||{};
+    const cur=r4(S.holdings[t]), tg=S.target[t]?rq(T.qty):0, d=rq(tg-cur);
+    const kind= d===0?'same': d>0?'buy':'sell';
+    const tag= cur===0&&tg>0?'new': tg===0&&cur>0?'out':'';
+    out.push({t,cur,tg,d,kind,tag,w:S.target[t]?T.w:null,a:S.target[t]?T.a:null,name:T.name||H.name||''});
   });
-  out.sort((a,b)=>Math.abs(b.d)*(S.prices[b.t]||1)-Math.abs(a.d)*(S.prices[a.t]||1)||a.t.localeCompare(b.t));
   return out;
 }
-
+function holdRows(){
+  return Object.keys(S.holdings).map(t=>{const H=S.meta[t]||{};const q=r4(S.holdings[t]);
+    return {t,cur:q,tg:q,d:0,kind:'same',tag:'',w:H.w,a:H.a,name:H.name||''};});
+}
+function sortRows(rows){
+  const k=(settings.tsort==='act'&&!S.target)?'t':(settings.tsort||'t');
+  const val=r=>{const p=priceOf(r.t);return Math.abs(r.d)*(p?p.v:1);};
+  return rows.sort((a,b)=>{
+    if(k==='w')return (b.w??-1)-(a.w??-1)||a.t.localeCompare(b.t);
+    if(k==='act'){const g=r=>r.kind==='sell'?0:r.kind==='buy'?1:2;return g(a)-g(b)||val(b)-val(a)||a.t.localeCompare(b.t);}
+    return a.t.localeCompare(b.t);
+  });
+}
+function posHTML(r,i,idle){
+  const tag=r.tag==='new'?'<span class="tag new">신규 편입</span>':r.tag==='out'?'<span class="tag out">편출</span>':'';
+  const done=!!S.done[r.t], act=r.kind!=='same';
+  const p=priceOf(r.t);
+  let actLine='';
+  if(!idle){
+    actLine=act?`<div class="act ${r.kind}">${r.d>0?'+':'−'}${fq(Math.abs(r.d))} <small>${r.kind==='buy'?'매수':'매도'}${p?' ≈'+fmt$(Math.abs(r.d)*p.v):''}</small></div>`
+               :`<div class="act ok">✓ 일치</div>`;
+  }
+  const amt=r.a!=null&&r.a!==undefined?fmt$c(r.a):'';
+  return `<div class="pos ${done&&act?'done':''} ${!idle&&!act?'same':''}">
+    <div class="no num">${i+1}</div>
+    <div class="id"><div><span class="tk">${esc(r.t)}</span>${tag}</div>${r.name?`<div class="nm">${esc(r.name)}</div>`:''}</div>
+    <div class="tgt num">
+      <div class="sh"><b>${fq(r.tg)}</b><span>주</span></div>
+      ${(amt||r.w!=null)?`<div class="meta">${amt}${r.w!=null?`<span class="pct">${r.w}%</span>`:''}</div>`:''}
+      ${idle?'':`<div class="hold">보유 ${fq(r.cur)}</div>`}
+      ${actLine}
+    </div>
+    <div class="ck">${!idle&&act?`<button class="check" data-done="${esc(r.t)}" aria-label="${esc(r.t)} 완료 표시" aria-pressed="${done}">✓</button>`:''}</div>
+  </div>`;
+}
+function sortBar(idle){
+  const b=(k,l)=>`<button data-ts="${k}" aria-pressed="${(settings.tsort||'t')===k}">${l}</button>`;
+  return `<div class="sortbar"><span>정렬</span>${b('t','종목')}${b('w','비중')}${idle?'':b('act','매매 먼저')}</div>`;
+}
+function renderTrade(){
+  const v=$('tradeView');
+  const rows=diff();
+  const nH=Object.keys(S.holdings).length;
+  if(!rows){
+    if(!nH){
+      v.innerHTML=`<div class="empty"><p>먼저 지금 들고 계신 종목을 입력하세요. 파이어니어 화면에서 북마크를 누르고 “현재 보유로 저장”을 누르면 한 번에 됩니다.</p>
+        <button class="btn primary" id="btnEmptyPaste">직접 붙여넣기</button></div>`;
+      $('btnEmptyPaste').onclick=()=>openSheet('hold');return;
+    }
+    const hr=sortRows(holdRows());
+    const tot=hr.reduce((s,r)=>s+(r.a||0),0);
+    const md=S.metaDate?new Date(S.metaDate).toLocaleDateString('ko-KR',{month:'long',day:'numeric'}):'';
+    v.innerHTML=`<div class="summary"><p class="headline">다음 리스트를 기다리는 중</p>
+      <p class="meta">보유 ${nH}종목${tot?`, 배분 금액 ${fmt$c(tot)}`:''}${md?`, ${md} 리스트 기준`:''}</p>
+      <p class="meta" style="margin-top:8px">리스트가 바뀌면 파이어니어에서 북마크를 누르고 “목표로 비교”를 선택하세요.</p></div>
+      ${sortBar(true)}<div class="list">${hr.map((r,i)=>posHTML(r,i,true)).join('')}</div>`;
+    bindSort();return;
+  }
+  sortRows(rows);
+  const buys=rows.filter(r=>r.kind==='buy'), sells=rows.filter(r=>r.kind==='sell');
+  const nNew=rows.filter(r=>r.tag==='new').length, nOut=rows.filter(r=>r.tag==='out').length;
+  const acts=[...buys,...sells], act=acts.length, nDone=acts.filter(r=>S.done[r.t]).length;
+  let money='';
+  if(act&&acts.every(r=>priceOf(r.t))){
+    const live=acts.every(r=>priceOf(r.t).src==='live');
+    const b=buys.reduce((s,r)=>s+r.d*priceOf(r.t).v,0), sl=sells.reduce((a,r)=>a-r.d*priceOf(r.t).v,0);
+    money=`<div class="money num"><div>매도 대금<strong>${fmt$(sl)}</strong></div><div>매수 필요<strong>${fmt$(b)}</strong></div><div>현금 변화<strong style="color:var(${sl-b>=0?'--buy':'--sell'})">${sl-b>=0?'+':''}${fmt$(sl-b)}</strong></div></div>
+      <p class="meta" style="margin-top:6px">${live?'실시간 시세 기준':'파이어니어 표의 가격 기준, 시세 불러오기로 실시간 반영'}</p>`;
+  }
+  const date=S.target.__date?new Date(S.target.__date):null;
+  const nT=Object.keys(S.target).filter(t=>t!=='__date').length;
+  let h=`<div class="summary">
+    <p class="headline">${act?`매수 ${buys.length}종목, 매도 ${sells.length}종목`:'모든 종목이 일치합니다'}</p>
+    <p class="meta">${[`새 리스트 ${nT}종목`,nNew?`신규 편입 ${nNew}`:'',nOut?`편출 ${nOut}`:'',act?`완료 ${nDone}/${act}`:'',date?`${date.toLocaleDateString('ko-KR',{month:'long',day:'numeric'})} 입력`:''].filter(Boolean).join(', ')}</p>
+    ${money}</div>${sortBar()}
+    <div class="list">${rows.map((r,i)=>posHTML(r,i,false)).join('')}</div>
+    <div class="apply-bar"><button class="btn primary" id="btnApply">매매 끝 — 보유 수량 갱신</button></div>`;
+  v.innerHTML=h;
+  v.querySelectorAll('[data-done]').forEach(b=>b.onclick=()=>{const t=b.dataset.done;S.done[t]=!S.done[t];if(!S.done[t])delete S.done[t];save();renderTrade();});
+  $('btnApply').onclick=applyTarget;
+  bindSort();
+}
+function bindSort(){
+  document.querySelectorAll('[data-ts]').forEach(b=>b.onclick=()=>{settings.tsort=b.dataset.ts;try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}renderTrade();});
+}
+function metaFrom(list){
+  const m={};list.forEach(r=>{m[r.t]={w:r.w??null,a:r.a??null,p:r.p??null,qty:r.qty??null,name:r.name||''};});return m;
+}
 /* ---------- table sorting ---------- */
 let pSort={k:null,d:1}, hSort={k:'t',d:1};
 function cmp(a,b,k,d){
@@ -357,49 +489,6 @@ document.querySelectorAll('[data-psort]').forEach(b=>b.onclick=()=>{nextSort(pSo
 document.querySelectorAll('[data-hsort]').forEach(b=>b.onclick=()=>{nextSort(hSort,b.dataset.hsort);renderHold();});
 
 /* ---------- render ---------- */
-function ticketHTML(r){
-  const p=S.prices[r.t];
-  const amt=p?`≈ ${fmt$(Math.abs(r.d)*p)}`:'';
-  const tag=r.tag==='new'?'<span class="tag new">신규 편입</span>':r.tag==='out'?'<span class="tag out">전량 매도</span>':'';
-  const done=!!S.done[r.t];
-  return `<div class="ticket ${done?'done':''}">
-    <button class="check" data-done="${esc(r.t)}" aria-label="${esc(r.t)} 완료 표시" aria-pressed="${done}">✓</button>
-    <div><div><span class="tk">${esc(r.t)}</span>${tag}</div>
-      <div class="detail num">${fq(r.cur)}주 → ${fq(r.tg)}주${r.w!=null?` <span>(${r.w}%)</span>`:''}</div></div>
-    <div class="delta ${r.kind} num"><b>${r.d>0?'+':'−'}${fq(Math.abs(r.d))}</b><span>${r.kind==='buy'?'매수':'매도'}${amt?' '+amt:''}</span></div>
-  </div>`;
-}
-function renderTrade(){
-  const v=$('tradeView');
-  const rows=diff();
-  if(!rows){
-    v.innerHTML=`<div class="empty"><p>${Object.keys(S.holdings).length?'파이어니어에서 새 리스트가 나오면 붙여넣으세요. 지금 보유와 비교해 몇 주씩 사고팔지 보여드립니다.':'먼저 지금 들고 계신 종목을 입력하세요. 현재 파이어니어 리스트를 붙여넣고 “현재 보유로 저장”을 누르면 한 번에 됩니다.'}</p>
-      <button class="btn primary" id="btnEmptyPaste">${Object.keys(S.holdings).length?'새 리스트 붙여넣기':'현재 리스트로 보유 입력'}</button></div>`;
-    $('btnEmptyPaste').onclick=()=>openSheet(Object.keys(S.holdings).length?'target':'hold');
-    return;
-  }
-  const buys=rows.filter(r=>r.kind==='buy'), sells=rows.filter(r=>r.kind==='sell'), same=rows.filter(r=>r.kind==='same');
-  const nNew=rows.filter(r=>r.tag==='new').length, nOut=rows.filter(r=>r.tag==='out').length;
-  const act=buys.length+sells.length, nDone=[...buys,...sells].filter(r=>S.done[r.t]).length;
-  let money='';
-  const priced=[...buys,...sells].every(r=>S.prices[r.t]);
-  if(act&&priced){
-    const b=buys.reduce((s,r)=>s+r.d*S.prices[r.t],0), s=sells.reduce((a,r)=>a-r.d*S.prices[r.t],0);
-    money=`<div class="money num"><div>매도 대금<strong>${fmt$(s)}</strong></div><div>매수 필요<strong>${fmt$(b)}</strong></div><div>현금 변화<strong style="color:var(${s-b>=0?'--buy':'--sell'})">${s-b>=0?'+':''}${fmt$(s-b)}</strong></div></div>`;
-  }
-  const date=S.target.__date?new Date(S.target.__date):null;
-  let h=`<div class="summary">
-    <p class="headline">${act?`매수 ${buys.length}종목, 매도 ${sells.length}종목`:'바꿀 종목이 없습니다'}</p>
-    <p class="meta">${[nNew?`신규 편입 ${nNew}`:'',nOut?`전량 매도 ${nOut}`:'',act?`완료 ${nDone}/${act}`:'',date?`리스트 ${date.toLocaleDateString('ko-KR',{month:'long',day:'numeric'})} 입력`:''].filter(Boolean).join(', ')}</p>
-    ${money}</div>`;
-  if(sells.length)h+=`<div class="group-title">매도 먼저</div><div class="list">${sells.map(ticketHTML).join('')}</div>`;
-  if(buys.length)h+=`<div class="group-title">매수</div><div class="list">${buys.map(ticketHTML).join('')}</div>`;
-  if(same.length)h+=`<div class="group-title">변동 없음</div><div class="list"><div class="same" style="border-top:0">${same.map(r=>esc(r.t)+' '+fq(r.tg)+'주').join(', ')}</div></div>`;
-  h+=`<div class="apply-bar"><button class="btn primary" id="btnApply">매매 끝 — 보유 수량 갱신</button></div>`;
-  v.innerHTML=h;
-  v.querySelectorAll('[data-done]').forEach(b=>b.onclick=()=>{const t=b.dataset.done;S.done[t]=!S.done[t];if(!S.done[t])delete S.done[t];save();renderTrade();});
-  $('btnApply').onclick=applyTarget;
-}
 function applyTarget(){
   const rows=diff();if(!rows)return;
   const act=rows.filter(r=>r.kind!=='same'), pending=act.filter(r=>!S.done[r.t]).length;
@@ -408,14 +497,15 @@ function applyTarget(){
   S.history.unshift({at:Date.now(),buy:act.filter(r=>r.d>0).length,sell:act.filter(r=>r.d<0).length,
     added:act.filter(r=>r.tag==='new').map(r=>r.t),removed:act.filter(r=>r.tag==='out').map(r=>r.t)});
   S.history=S.history.slice(0,12);
+  S.meta=metaFrom(Object.entries(S.target).filter(([t])=>t!=='__date').map(([t,v])=>Object.assign({t},v)));S.metaDate=S.target.__date||Date.now();
   S.holdings=nh;S.target=null;S.done={};save();renderAll();toast('보유 수량을 갱신했습니다');
 }
 function renderHold(){
-  const ts=Object.keys(S.holdings).map(t=>({t,qty:+S.holdings[t]})).sort((a,b)=>cmp(a,b,hSort.k,hSort.d)).map(o=>o.t);markSort('data-hsort',hSort);
-  $('holdBody').innerHTML=ts.length?ts.map((t,n)=>`<tr><td class="no">${n+1}</td><td><span class="tk" style="font-size:15px">${esc(t)}</span></td>
+  const ts=Object.keys(S.holdings).map(t=>({t,qty:+S.holdings[t],w:S.meta[t]?.w??null,a:S.meta[t]?.a??null})).sort((a,b)=>cmp(a,b,hSort.k,hSort.d)).map(o=>o.t);markSort('data-hsort',hSort);
+  $('holdBody').innerHTML=ts.length?ts.map((t,n)=>`<tr><td class="no">${n+1}</td><td><span class="tk" style="font-size:15px">${esc(t)}</span></td><td class="num mut" style="text-align:right">${S.meta[t]?.w!=null?S.meta[t].w+'%':''}</td><td class="num mut" style="text-align:right">${S.meta[t]?.a!=null?fmt$c(S.meta[t].a):''}</td>
     <td style="text-align:right"><input class="q num" type="number" inputmode="decimal" step="any" min="0" value="${S.holdings[t]}" data-hold="${esc(t)}" aria-label="${esc(t)} 수량"></td>
     <td class="x"><button class="xbtn" data-delhold="${esc(t)}" aria-label="${esc(t)} 삭제">×</button></td></tr>`).join('')
-    :`<tr><td colspan="4" style="color:var(--muted);padding:16px 10px">입력된 종목이 없습니다.</td></tr>`;
+    :`<tr><td colspan="6" style="color:var(--muted);padding:16px 10px">입력된 종목이 없습니다.</td></tr>`;
   document.querySelectorAll('[data-hold]').forEach(i=>i.onchange=()=>{S.holdings[i.dataset.hold]=toQ(i.value);save();renderTrade();});
   document.querySelectorAll('[data-delhold]').forEach(b=>b.onclick=()=>{delete S.holdings[b.dataset.delhold];save();renderAll();});
   $('histList').innerHTML=S.history.length?S.history.map(e=>`<li><span class="num">${new Date(e.at).toLocaleDateString('ko-KR',{year:'2-digit',month:'numeric',day:'numeric'})}</span> 매수 ${e.buy}, 매도 ${e.sell}${e.added.length?` / 편입 ${e.added.join(' ')}`:''}${e.removed.length?` / 편출 ${e.removed.join(' ')}`:''}</li>`).join(''):'<li style="list-style:none;margin-left:-18px;color:var(--muted)">아직 기록이 없습니다.</li>';
@@ -457,6 +547,7 @@ function renderPreview(){
     <td><input class="tick" value="${esc(r.t)}" data-pi="${i}" data-pf="t" aria-label="티커"></td>
     <td style="text-align:right"><input class="q num" type="number" inputmode="decimal" step="any" min="0" value="${r.qty??''}" data-pi="${i}" data-pf="qty" aria-label="수량" ${r.qty==null?'style="border-color:var(--sell)"':''}></td>
     <td style="text-align:right"><input class="q num" type="number" inputmode="decimal" step="0.01" value="${r.w??''}" data-pi="${i}" data-pf="w" aria-label="비중" style="max-width:76px"></td>
+    <td class="num mut" style="text-align:right;white-space:nowrap">${r.a!=null?fmt$c(r.a):''}</td>
     <td class="x"><button class="xbtn" data-pdel="${i}" aria-label="삭제">×</button></td></tr>`).join('');
   document.querySelectorAll('[data-pi]').forEach(inp=>inp.onchange=()=>{
     const r=preview[inp.dataset.pi],f=inp.dataset.pf;
@@ -472,14 +563,14 @@ function validPreview(){
 }
 $('btnAsTarget').onclick=()=>{
   const rows=validPreview();if(!rows)return;
-  S.target={__date:Date.now()};rows.forEach(r=>S.target[r.t]={qty:r4(r.qty),w:r.w});
+  S.target={__date:Date.now()};rows.forEach(r=>S.target[r.t]={qty:r4(r.qty),w:r.w??null,a:r.a??null,p:r.p??null,name:r.name||''});
   S.done={};save();closeSheet();renderAll();
   document.querySelector('nav button[data-tab="trade"]').click();
   if(settings.fhKey)fetchPrices();
 };
 $('btnAsHold').onclick=()=>{
   const rows=validPreview();if(!rows)return;
-  S.holdings={};rows.forEach(r=>{if(rq(r.qty)>0)S.holdings[r.t]=rq(r.qty);});
+  S.holdings={};rows.forEach(r=>{if(rq(r.qty)>0)S.holdings[r.t]=rq(r.qty);});S.meta=metaFrom(rows);S.metaDate=Date.now();
   save();closeSheet();renderAll();toast('현재 보유로 저장했습니다');
 };
 $('btnAddHold').onclick=()=>{
