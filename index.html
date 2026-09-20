@@ -27,7 +27,11 @@ body{margin:0;background:var(--bg);color:var(--ink);
   font-size:16px;line-height:1.5;-webkit-text-size-adjust:100%}
 .num{font-variant-numeric:tabular-nums}
 .wrap{max-width:640px;margin:0 auto;padding:16px 16px 96px}
-header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:8px 0 16px}
+header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:8px 0 16px}
+.hdr-r{display:flex;flex-direction:column;align-items:flex-end;gap:2px;text-align:right}
+.ver{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.ver small{font-weight:400;color:var(--muted);font-size:12px;margin-left:6px}
+.ver-new{border:0;background:var(--buy-soft);color:var(--buy);font:inherit;font-size:12px;font-weight:500;padding:2px 8px;border-radius:4px;cursor:pointer;margin-top:2px}
 h1{font-size:22px;font-weight:700;margin:0;letter-spacing:-.01em}
 .sub{color:var(--muted);font-size:13px}
 nav{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:4px;margin-bottom:16px}
@@ -121,7 +125,7 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 <div class="wrap">
   <header>
     <h1>MZBrecalculate</h1>
-    <span class="sub" id="syncState">이 기기에만 저장</span>
+    <div class="hdr-r"><span class="ver" id="verTag" title=""></span><span class="sub" id="syncState">이 기기에만 저장</span></div>
   </header>
   <nav role="tablist">
     <button role="tab" data-tab="trade" aria-selected="true">조정</button>
@@ -569,7 +573,39 @@ function checkImport(){
   $('pasteBox').value=txt;$('btnParse').click();
 }
 window.addEventListener('hashchange',checkImport);
+/* ---------- version tag ---------- */
+function relTime(d){
+  const m=Math.round((Date.now()-d)/60000);
+  if(m<1)return '방금';if(m<60)return m+'분 전';
+  const h=Math.round(m/60);if(h<24)return h+'시간 전';
+  return Math.round(h/24)+'일 전';
+}
+async function loadVersion(){
+  const host=location.hostname;
+  if(!host.endsWith('.github.io'))return;
+  const owner=host.split('.')[0], repo=location.pathname.split('/').filter(Boolean)[0];
+  if(!repo)return;
+  try{
+    const r=await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?path=index.html&per_page=1`,{cache:'no-store'});
+    if(!r.ok)return;
+    const c=(await r.json())[0];if(!c)return;
+    const msg=c.commit.message.split('\n')[0].trim();
+    const m=msg.match(/\bv\s?(\d+(?:\.\d+)*)\s*$/i);
+    const label=m?'V'+m[1]:msg.replace(/^Update\s+/i,'');
+    const when=new Date(c.commit.committer.date);
+    const tag=$('verTag');
+    tag.innerHTML=`${esc(label)}<small>${relTime(when)}</small>`;
+    tag.title=msg+' ('+when.toLocaleString('ko-KR')+')';
+    const loaded=new Date(document.lastModified);
+    if(!isNaN(loaded)&&when-loaded>90000){
+      const b=document.createElement('button');b.className='ver-new';b.textContent='새 버전 있음, 새로고침';
+      b.onclick=()=>{location.href=APP_URL.split('?')[0]+'?v='+Date.now();};
+      tag.parentNode.insertBefore(b,tag.nextSibling);
+    }
+  }catch(e){}
+}
 renderAll();
+loadVersion();
 if(settings.fbCfg)connectFB();
 checkImport();
 </script>
