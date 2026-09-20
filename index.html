@@ -85,22 +85,37 @@ button{font-family:inherit}
 .bal .v{font-size:30px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
 .bal .src{font-size:12px;color:var(--muted);text-align:right}
 /* position cards */
-.pos{display:grid;grid-template-columns:24px minmax(0,1fr) 88px 52px minmax(92px,auto) 32px;gap:10px;align-items:center;padding:12px 8px 12px 4px;border-top:1px solid var(--line)}
+.list{--c-id:240px;--c-amt:110px;--c-wt:64px}
+.pos{display:grid;grid-template-columns:24px var(--c-id) var(--c-amt) var(--c-wt) minmax(80px,1fr) 32px;gap:10px;align-items:center;padding:12px 8px 12px 4px;border-top:1px solid var(--line)}
 .pos .amt,.pos .wt{align-self:start;padding-top:4px;text-align:right;font-size:14px}
 .pos .wt{font-weight:500}
 .pos.head{padding-top:8px;padding-bottom:8px;font-size:12px;color:var(--muted);align-items:end}
 .pos.head div{padding-top:0!important;font-weight:400!important}
 .pos.head .r{text-align:right}
+.pos.head>div{position:relative}
+.pos.head .id,.pos.head .amt,.pos.head .wt{overflow:visible!important}
+.hs{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:3px;color:var(--muted);font-size:12px;white-space:nowrap}
+.hs:hover,.hs[aria-sort]{color:var(--ink)}
+.hs:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
+.hs .arr{font-size:9px;opacity:.4}
+.hs[aria-sort] .arr{opacity:1}
+.rz{position:absolute;top:-8px;bottom:-8px;right:-11px;width:12px;cursor:col-resize;touch-action:none;z-index:2}
+.rz::after{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;border-radius:1px;background:var(--line)}
+.rz:hover::after,.rz.on::after{background:var(--focus)}
+body.resizing{cursor:col-resize;user-select:none}
+.pos .id{overflow:hidden}
 @media (max-width:480px){
-  .pos{grid-template-columns:16px minmax(0,1fr) 62px 34px 80px 26px;gap:6px}
+  .pos{grid-template-columns:16px var(--c-id) var(--c-amt) var(--c-wt) minmax(72px,1fr) 26px;gap:6px}
   .pos .amt,.pos .wt{font-size:12px!important}
   .tgt .sh span{display:none}
+  .hs .lg{display:none}
+  .hs .arr{display:none}
+  .hs[aria-sort] .arr{display:inline}
   .pos .id{overflow:hidden}
   .pos .tk{font-size:15px}
   .pos .tag{display:block;width:max-content;margin:2px 0 0}
   .tgt .act small{display:block;margin:0}
   .pos .check{width:24px;height:24px}
-  .pos .amt,.pos .wt{font-size:12.5px}
   .tgt .sh b{font-size:18px}
 }
 .pos:first-child{border-top:0}
@@ -408,13 +423,22 @@ function holdRows(){
   return Object.keys(S.holdings).map(t=>{const H=S.meta[t]||{};const q=r4(S.holdings[t]);
     return {t,cur:q,tg:q,d:0,kind:'same',tag:'',w:H.w,a:H.a,name:H.name||''};});
 }
+function tsort(){
+  let t=settings.tsort;
+  if(!t||typeof t!=='object')t={k:typeof t==='string'?t:'t',d:1};
+  if(t.k==='act'&&!S.target)t={k:'t',d:1};
+  return t;
+}
 function sortRows(rows){
-  const k=(settings.tsort==='act'&&!S.target)?'t':(settings.tsort||'t');
+  const {k,d}=tsort();
   const val=r=>{const p=priceOf(r.t);return Math.abs(r.d)*(p?p.v:1);};
+  const num=(x,y)=>(x==null&&y==null)?0:x==null?1:y==null?-1:(x-y)*d;
   return rows.sort((a,b)=>{
-    if(k==='w')return (b.w??-1)-(a.w??-1)||a.t.localeCompare(b.t);
     if(k==='act'){const g=r=>r.kind==='sell'?0:r.kind==='buy'?1:2;return g(a)-g(b)||val(b)-val(a)||a.t.localeCompare(b.t);}
-    return a.t.localeCompare(b.t);
+    if(k==='a')return num(a.a,b.a)||a.t.localeCompare(b.t);
+    if(k==='w')return num(a.w,b.w)||a.t.localeCompare(b.t);
+    if(k==='tg')return num(a.tg,b.tg)||a.t.localeCompare(b.t);
+    return a.t.localeCompare(b.t)*d;
   });
 }
 function posHTML(r,i,idle){
@@ -440,10 +464,16 @@ function posHTML(r,i,idle){
     <div class="ck">${!idle&&act?`<button class="check" data-done="${esc(r.t)}" aria-label="${esc(r.t)} 완료 표시" aria-pressed="${done}">✓</button>`:''}</div>
   </div>`;
 }
-function posHead(){return `<div class="pos head"><div></div><div>종목</div><div class="r">배분 금액</div><div class="r">비중</div><div class="r">주식 수</div><div></div></div>`;}
+function posHead(){
+  const {k,d}=tsort();
+  const h=(key,label)=>`<button class="hs" data-hk="${key}"${k===key?` aria-sort="${d>0?'ascending':'descending'}"`:''}>${label}<span class="arr">${k===key?(d>0?'▲':'▼'):'▲▼'}</span></button>`;
+  const rz=c=>`<span class="rz" data-rz="${c}" title="드래그해서 칸 너비 조절"></span>`;
+  return `<div class="pos head"><div></div><div class="id">${h('t','종목')}${rz('id')}</div><div class="amt r">${h('a','<span class="lg">배분 </span>금액')}${rz('amt')}</div><div class="wt r">${h('w','비중')}${rz('wt')}</div><div class="r">${h('tg','주식 수')}</div><div></div></div>`;
+}
 function sortBar(idle){
-  const b=(k,l)=>`<button data-ts="${k}" aria-pressed="${(settings.tsort||'t')===k}">${l}</button>`;
-  return `<div class="sortbar"><span>정렬</span>${b('t','종목')}${b('w','비중')}${idle?'':b('act','매매 먼저')}</div>`;
+  if(idle)return '<div style="height:12px"></div>';
+  const on=tsort().k==='act';
+  return `<div class="sortbar"><button data-act="1" aria-pressed="${on}">매매할 종목 먼저 보기</button></div>`;
 }
 function renderTrade(){
   renderBal();
@@ -490,7 +520,34 @@ function renderTrade(){
   bindSort();
 }
 function bindSort(){
-  document.querySelectorAll('[data-ts]').forEach(b=>b.onclick=()=>{settings.tsort=b.dataset.ts;try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}renderTrade();});
+  const store=()=>{try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}};
+  document.querySelectorAll('[data-hk]').forEach(b=>b.onclick=()=>{
+    const cur=tsort(),k=b.dataset.hk;
+    settings.tsort=cur.k===k?{k,d:-cur.d}:{k,d:k==='t'?1:-1};store();renderTrade();
+  });
+  document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{
+    settings.tsort=tsort().k==='act'?{k:'t',d:1}:{k:'act',d:1};store();renderTrade();
+  });
+  document.querySelectorAll('[data-rz]').forEach(h=>h.onpointerdown=e=>{
+    e.preventDefault();e.stopPropagation();
+    const c=h.dataset.rz, cell=h.parentElement, x0=e.clientX, w0=cell.getBoundingClientRect().width;
+    const min={id:56,amt:48,wt:34}[c];
+    h.setPointerCapture(e.pointerId);h.classList.add('on');document.body.classList.add('resizing');
+    const mv=ev=>{const w=Math.max(min,Math.round(w0+ev.clientX-x0));colW()[c]=w;applyCols();};
+    const up=()=>{h.releasePointerCapture(e.pointerId);h.classList.remove('on');document.body.classList.remove('resizing');
+      h.removeEventListener('pointermove',mv);h.removeEventListener('pointerup',up);h.removeEventListener('pointercancel',up);store();};
+    h.addEventListener('pointermove',mv);h.addEventListener('pointerup',up);h.addEventListener('pointercancel',up);
+  });
+  h2dbl();
+  applyCols();
+}
+function h2dbl(){document.querySelectorAll('[data-rz]').forEach(h=>h.ondblclick=()=>{const c=h.dataset.rz;delete colW()[c];applyCols();try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}});}
+const isMob=()=>matchMedia('(max-width:480px)').matches;
+const COL_DEF={desk:{id:240,amt:110,wt:64},mob:{id:88,amt:64,wt:38}};
+function colW(){settings.cols=settings.cols||{};const m=isMob()?'mob':'desk';settings.cols[m]=settings.cols[m]||{};return settings.cols[m];}
+function applyCols(){
+  const m=isMob()?'mob':'desk', w=Object.assign({},COL_DEF[m],colW());
+  document.querySelectorAll('.list').forEach(l=>{l.style.setProperty('--c-id',w.id+'px');l.style.setProperty('--c-amt',w.amt+'px');l.style.setProperty('--c-wt',w.wt+'px');});
 }
 function metaFrom(list){
   const m={};list.forEach(r=>{m[r.t]={w:r.w??null,a:r.a??null,p:r.p??null,qty:r.qty??null,name:r.name||''};});return m;
