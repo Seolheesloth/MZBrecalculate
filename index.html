@@ -193,8 +193,9 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 <div class="wrap">
   <header>
     <h1>MZBrecalculate</h1>
-    <div class="hdr-r"><span class="ver" id="verTag" title=""></span><span class="sub" id="syncState">이 기기에만 저장</span></div>
+    <div class="hdr-r"><span class="ver" id="verTag" title=""></span><span class="sub" id="buildTag"></span><span class="sub" id="syncState">이 기기에만 저장</span></div>
   </header>
+  <div id="errBox" class="hidden" style="background:var(--sell-soft);color:var(--sell);border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px;word-break:break-all"></div>
   <div class="bal hidden" id="balBox"></div>
   <nav role="tablist">
     <button role="tab" data-tab="trade" aria-selected="true">조정</button>
@@ -304,6 +305,12 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 <div class="toast" id="toast" role="status"></div>
 
 <script>
+/* ---------- build & error capture ---------- */
+const BUILD='build 0921-1';
+function showErr(msg){try{const b=document.getElementById('errBox');b.classList.remove('hidden');b.textContent='오류: '+msg+' ('+BUILD+')';}catch(e){}}
+window.addEventListener('error',e=>showErr((e.message||'unknown')+(e.lineno?' @'+e.lineno:'')));
+window.addEventListener('unhandledrejection',e=>showErr('promise: '+((e.reason&&(e.reason.code||e.reason.message))||e.reason)));
+
 /* ---------- state ---------- */
 const LS_KEY='pioneerRebal:v1', LS_SET='pioneerRebal:settings';
 const blank=()=>({holdings:{},meta:{},metaDate:0,target:null,done:{},prices:{},history:[],updatedAt:0});
@@ -590,7 +597,7 @@ function renderHold(){
     :`<tr><td colspan="6" style="color:var(--muted);padding:16px 10px">입력된 종목이 없습니다.</td></tr>`;
   document.querySelectorAll('[data-hold]').forEach(i=>i.onchange=()=>{S.holdings[i.dataset.hold]=toQ(i.value);save();renderTrade();});
   document.querySelectorAll('[data-delhold]').forEach(b=>b.onclick=()=>{delete S.holdings[b.dataset.delhold];save();renderAll();});
-  $('histList').innerHTML=S.history.length?S.history.map(e=>`<li><span class="num">${new Date(e.at).toLocaleDateString('ko-KR',{year:'2-digit',month:'numeric',day:'numeric'})}</span> 매수 ${e.buy}, 매도 ${e.sell}${e.added.length?` / 편입 ${e.added.join(' ')}`:''}${e.removed.length?` / 편출 ${e.removed.join(' ')}`:''}</li>`).join(''):'<li style="list-style:none;margin-left:-18px;color:var(--muted)">아직 기록이 없습니다.</li>';
+  $('histList').innerHTML=S.history.length?S.history.map(e=>`<li><span class="num">${new Date(e.at).toLocaleDateString('ko-KR',{year:'2-digit',month:'numeric',day:'numeric'})}</span> 매수 ${e.buy}, 매도 ${e.sell}${(e.added||[]).length?` / 편입 ${(e.added||[]).join(' ')}`:''}${(e.removed||[]).length?` / 편출 ${(e.removed||[]).join(' ')}`:''}</li>`).join(''):'<li style="list-style:none;margin-left:-18px;color:var(--muted)">아직 기록이 없습니다.</li>';
 }
 function renderBal(){
   const box=$('balBox'), ts=Object.keys(S.holdings);
@@ -849,10 +856,11 @@ async function loadVersion(){
     }
   }catch(e){}
 }
-renderAll();
-loadVersion();
+$('buildTag').textContent=BUILD;
 initFB();
-checkImport();
+loadVersion();
+try{renderAll();}catch(e){showErr((e&&e.message)||e);console.error(e);}
+try{checkImport();}catch(e){showErr((e&&e.message)||e);}
 </script>
 </body>
 </html>
