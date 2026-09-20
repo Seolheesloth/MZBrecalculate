@@ -713,17 +713,27 @@ const FB_CFG={
   appId:"1:946213449992:web:95c5e46858533a8b187cbd"
 };
 const FBV='10.12.2';
-let FA=null, unsub=null;
+let FA=null, unsub=null, fbReady=null, fbErr='';
 function setAuthUI(user){
   $('btnLogin').classList.toggle('hidden',!!user);
   $('btnLogout').classList.toggle('hidden',!user);
   $('authStatus').textContent=user?`${user.email||'Google 계정'}으로 로그인됨`:'로그인하지 않았습니다. 이 기기에만 저장됩니다.';
 }
-async function initFB(){
-  try{
-    const A=await import(`https://www.gstatic.com/firebasejs/${FBV}/firebase-app.js`);
-    const U=await import(`https://www.gstatic.com/firebasejs/${FBV}/firebase-auth.js`);
-    const D=await import(`https://www.gstatic.com/firebasejs/${FBV}/firebase-database.js`);
+function initFB(){
+  if(fbReady)return fbReady;
+  $('authStatus').textContent='동기화 준비 중…';
+  const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('시간 초과')),20000));
+  fbReady=Promise.race([initFBInner(),timeout]).then(()=>true).catch(e=>{
+    fbReady=null;fbErr=(e&&(e.code||e.message))||'오류';
+    $('authStatus').textContent='동기화 모듈을 불러오지 못했습니다 ('+fbErr+'). 인터넷 연결을 확인하고 로그인 버튼을 다시 눌러 주세요.';
+    setSync('이 기기에만 저장');return false;
+  });
+  return fbReady;
+}
+async function initFBInner(){
+  {
+    const base=`https://www.gstatic.com/firebasejs/${FBV}/`;
+    const [A,U,D]=await Promise.all([import(base+'firebase-app.js'),import(base+'firebase-auth.js'),import(base+'firebase-database.js')]);
     const app=A.initializeApp(FB_CFG);
     const auth=U.getAuth(app), db=D.getDatabase(app);
     FA={U,D,auth,db};
@@ -746,17 +756,22 @@ async function initFB(){
           pullShared();renderAll();
         }else if((v.updatedAt||0)<(S.updatedAt||0)){save();}
         setSync('동기화됨');
-      },()=>setSync('동기화 오류'));
+      },err=>{setSync('동기화 오류');$('authStatus').textContent=`${user.email||''} 로그인됨, 하지만 데이터베이스 접근이 거부됐습니다 (${err&&err.code||'오류'}). Firebase 보안 규칙을 확인하세요.`;});
     });
-  }catch(e){setSync('이 기기에만 저장');$('authStatus').textContent='동기화 모듈을 불러오지 못했습니다. 인터넷 연결을 확인하세요.';}
+  }
 }
 $('btnLogin').onclick=async()=>{
-  if(!FA){toast('잠시 후 다시 눌러 주세요');return;}
+  if(!FA){
+    const b=$('btnLogin');b.disabled=true;b.textContent='준비 중…';
+    const ok=await initFB();
+    b.disabled=false;b.textContent='Google로 로그인';
+    if(!ok||!FA)return;
+  }
   const {U,auth}=FA, prov=new U.GoogleAuthProvider();
   try{await U.signInWithPopup(auth,prov);}
   catch(e){
     if(/popup-blocked|operation-not-supported|cancelled-popup/.test(e.code||''))U.signInWithRedirect(auth,prov);
-    else if(!/popup-closed/.test(e.code||''))toast('로그인하지 못했습니다: '+(e.code||'오류'));
+    else if(!/popup-closed/.test(e.code||'')){toast('로그인하지 못했습니다');$('authStatus').textContent='로그인 오류: '+(e.code||e.message||'알 수 없음');}
   }
 };
 $('btnLogout').onclick=async()=>{if(FA&&confirm('로그아웃할까요? 이 기기의 데이터는 그대로 남습니다.'))await FA.U.signOut(FA.auth);};
