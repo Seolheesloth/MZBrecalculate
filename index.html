@@ -237,20 +237,19 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
     </div>
     <div class="card">
       <h2>시세 (Finnhub)</h2>
-      <p class="help">예상 매수·매도 금액을 보려면 Finnhub API 키를 넣으세요. 포트폴리오 앱에서 쓰시던 키를 그대로 쓰시면 됩니다.</p>
+      <p class="help">실시간 가격으로 평가 잔고와 매매 금액을 보려면 Finnhub API 키를 넣으세요. 로그인해 두면 다른 기기에도 자동으로 들어갑니다.</p>
       <label class="fld" for="fhKey">API 키</label>
       <input id="fhKey" autocomplete="off" spellcheck="false">
+      <div class="row-actions" style="margin-top:10px"><button class="btn primary small" id="btnSaveKey">키 저장</button></div>
     </div>
     <div class="card">
-      <h2>기기 간 동기화 (Firebase)</h2>
-      <p class="help">포트폴리오 앱의 firebaseConfig를 그대로 붙여넣으세요. 데이터는 같은 데이터베이스의 <b>pioneerRebal</b> 노드에 따로 저장되어 기존 앱과 섞이지 않습니다.</p>
-      <label class="fld" for="fbCfg">firebaseConfig</label>
-      <textarea id="fbCfg" style="min-height:120px" spellcheck="false" placeholder='{ apiKey: "...", databaseURL: "https://...firebaseio.com", ... }'></textarea>
-      <div class="row-actions" style="margin-top:10px">
-        <button class="btn primary small" id="btnSaveSet">저장하고 연결</button>
-        <button class="btn small" id="btnDisconnect">연결 해제</button>
+      <h2>기기 간 동기화</h2>
+      <p class="help">PC와 폰에서 같은 Google 계정으로 로그인하면 보유 수량과 리스트가 자동으로 맞춰집니다. 처음 로그인할 때 이 기기에 저장된 데이터가 더 최신이면 그대로 올라갑니다.</p>
+      <p class="status" id="authStatus" style="margin:0 0 10px">로그인하지 않았습니다.</p>
+      <div class="row-actions">
+        <button class="btn primary small" id="btnLogin">Google로 로그인</button>
+        <button class="btn small hidden" id="btnLogout">로그아웃</button>
       </div>
-      <p class="status" id="setStatus"></p>
     </div>
     <div class="card">
       <h2>데이터</h2>
@@ -632,44 +631,78 @@ async function fetchPrices(){
 }
 $('btnPrice').onclick=fetchPrices;
 
-/* ---------- settings / firebase ---------- */
-$('fhKey').value=settings.fhKey;
+/* ---------- settings ---------- */
+$('fhKey').value=settings.fhKey||'';
 $('decSel').value=String(settings.dec??2);
-$('decSel').onchange=()=>{settings.dec=+$('decSel').value;try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}renderAll();toast('거래 단위를 바꿨습니다');};$('fbCfg').value=settings.fbCfg;
-function parseCfg(txt){const o={};txt.replace(/(\w+)\s*:\s*["'`]([^"'`]+)["'`]/g,(_,k,v)=>{o[k]=v;});return o.databaseURL&&o.apiKey?o:null;}
-async function connectFB(){
-  const cfg=parseCfg(settings.fbCfg||'');
-  if(!cfg){fb=null;setSync('이 기기에만 저장');return false;}
-  try{
-    setSync('연결 중…');
-    const A=await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
-    const D=await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
-    const app=A.getApps().find(a=>a.name==='rebal')||A.initializeApp(cfg,'rebal');
-    const db=D.getDatabase(app);
-    fb={db,ref:D.ref,set:D.set};
-    let first=true;
-    D.onValue(D.ref(db,'pioneerRebal'),snap=>{
-      const v=snap.val();
-      if(!v){if(first&&S.updatedAt)save();first=false;setSync('동기화됨');return;}
-      first=false;
-      if((v.updatedAt||0)>(S.updatedAt||0)){
-        S=Object.assign(blank(),v);S.holdings=S.holdings||{};S.done=S.done||{};S.prices=S.prices||{};S.history=S.history||[];
-        try{localStorage.setItem(LS_KEY,JSON.stringify(S));}catch(e){}
-        renderAll();
-      }else if((v.updatedAt||0)<(S.updatedAt||0)){save();}
-      setSync('동기화됨');
-    },()=>setSync('동기화 오류'));
-    return true;
-  }catch(e){fb=null;setSync('동기화 오류');return false;}
+function saveSettings(){try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}}
+function pushShared(){S.shared={fhKey:settings.fhKey||'',dec:settings.dec??2};save();}
+function pullShared(){
+  if(!S.shared)return;
+  if(S.shared.fhKey&&!settings.fhKey){settings.fhKey=S.shared.fhKey;$('fhKey').value=settings.fhKey;}
+  if(S.shared.dec!=null&&S.shared.dec!==settings.dec){settings.dec=S.shared.dec;$('decSel').value=String(settings.dec);}
+  saveSettings();
 }
-$('btnSaveSet').onclick=async()=>{
-  settings.fhKey=$('fhKey').value.trim();settings.fbCfg=$('fbCfg').value.trim();
-  try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}
-  if(settings.fbCfg&&!parseCfg(settings.fbCfg)){$('setStatus').textContent='firebaseConfig에서 apiKey와 databaseURL을 찾지 못했습니다.';return;}
-  const ok=settings.fbCfg?await connectFB():false;
-  $('setStatus').textContent=settings.fbCfg?(ok?'연결했습니다. 다른 기기에서도 같은 설정을 한 번 넣어 주세요.':'연결하지 못했습니다. databaseURL과 네트워크를 확인하세요.'):'저장했습니다.';
+$('decSel').onchange=()=>{settings.dec=+$('decSel').value;saveSettings();pushShared();renderAll();toast('거래 단위를 바꿨습니다');};
+$('btnSaveKey').onclick=()=>{settings.fhKey=$('fhKey').value.trim();saveSettings();pushShared();toast(settings.fhKey?'키를 저장했습니다':'키를 지웠습니다');};
+
+/* ---------- firebase sync (Google login) ---------- */
+const FB_CFG={
+  apiKey:"AIzaSyDuPNWBsNtT9ZzcqMKAut-C5PYtMk7vF-M",
+  authDomain:"mzbrecalculate.firebaseapp.com",
+  databaseURL:"https://mzbrecalculate-default-rtdb.firebaseio.com",
+  projectId:"mzbrecalculate",
+  storageBucket:"mzbrecalculate.firebasestorage.app",
+  messagingSenderId:"946213449992",
+  appId:"1:946213449992:web:95c5e46858533a8b187cbd"
 };
-$('btnDisconnect').onclick=()=>{settings.fbCfg='';$('fbCfg').value='';try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}fb=null;setSync('이 기기에만 저장');$('setStatus').textContent='연결을 해제했습니다. 데이터는 이 기기에 남아 있습니다.';};
+const FBV='10.12.2';
+let FA=null, unsub=null;
+function setAuthUI(user){
+  $('btnLogin').classList.toggle('hidden',!!user);
+  $('btnLogout').classList.toggle('hidden',!user);
+  $('authStatus').textContent=user?`${user.email||'Google 계정'}으로 로그인됨`:'로그인하지 않았습니다. 이 기기에만 저장됩니다.';
+}
+async function initFB(){
+  try{
+    const A=await import(`https://www.gstatic.com/firebasejs/${FBV}/firebase-app.js`);
+    const U=await import(`https://www.gstatic.com/firebasejs/${FBV}/firebase-auth.js`);
+    const D=await import(`https://www.gstatic.com/firebasejs/${FBV}/firebase-database.js`);
+    const app=A.initializeApp(FB_CFG);
+    const auth=U.getAuth(app), db=D.getDatabase(app);
+    FA={U,D,auth,db};
+    U.getRedirectResult(auth).catch(()=>{});
+    U.onAuthStateChanged(auth,user=>{
+      setAuthUI(user);
+      if(unsub){unsub();unsub=null;}
+      fb=null;
+      if(!user){setSync('이 기기에만 저장');return;}
+      const r=D.ref(db,`users/${user.uid}/rebal`);
+      fb={db,ref:()=>r,set:(ref,val)=>D.set(r,val)};
+      setSync('동기화 연결 중…');
+      unsub=D.onValue(r,snap=>{
+        const v=snap.val();
+        if(!v){if(S.updatedAt||Object.keys(S.holdings).length)save();setSync('동기화됨');return;}
+        if((v.updatedAt||0)>(S.updatedAt||0)){
+          S=Object.assign(blank(),v);
+          ['holdings','meta','done','prices'].forEach(k=>{S[k]=S[k]||{};});S.history=S.history||[];
+          try{localStorage.setItem(LS_KEY,JSON.stringify(S));}catch(e){}
+          pullShared();renderAll();
+        }else if((v.updatedAt||0)<(S.updatedAt||0)){save();}
+        setSync('동기화됨');
+      },()=>setSync('동기화 오류'));
+    });
+  }catch(e){setSync('이 기기에만 저장');$('authStatus').textContent='동기화 모듈을 불러오지 못했습니다. 인터넷 연결을 확인하세요.';}
+}
+$('btnLogin').onclick=async()=>{
+  if(!FA){toast('잠시 후 다시 눌러 주세요');return;}
+  const {U,auth}=FA, prov=new U.GoogleAuthProvider();
+  try{await U.signInWithPopup(auth,prov);}
+  catch(e){
+    if(/popup-blocked|operation-not-supported|cancelled-popup/.test(e.code||''))U.signInWithRedirect(auth,prov);
+    else if(!/popup-closed/.test(e.code||''))toast('로그인하지 못했습니다: '+(e.code||'오류'));
+  }
+};
+$('btnLogout').onclick=async()=>{if(FA&&confirm('로그아웃할까요? 이 기기의 데이터는 그대로 남습니다.'))await FA.U.signOut(FA.auth);};
 $('btnClearTarget').onclick=()=>{if(confirm('목표 리스트를 지울까요?')){S.target=null;S.done={};save();renderAll();toast('지웠습니다');}};
 
 
@@ -735,7 +768,7 @@ async function loadVersion(){
 }
 renderAll();
 loadVersion();
-if(settings.fbCfg)connectFB();
+initFB();
 checkImport();
 </script>
 </body>
