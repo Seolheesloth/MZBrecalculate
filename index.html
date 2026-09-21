@@ -208,6 +208,7 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
     <div class="row-actions" style="margin-bottom:12px">
       <button class="btn primary" id="btnPaste">새 리스트 붙여넣기</button>
       <button class="btn" id="btnPrice">시세 불러오기</button>
+      <button class="btn" id="btnShare">친구 공유</button>
     </div>
     <div id="tradeView"></div>
   </section>
@@ -268,6 +269,13 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
       </div>
     </div>
     <div class="card">
+      <h2>친구 공유</h2>
+      <p class="help">친구용 링크의 암호 코드입니다. 코드를 바꾸면 예전 링크는 더 이상 열리지 않으니, 바꾼 뒤에는 새 링크를 다시 보내 주세요. 테스트는 항상 <b>mzb-test</b>로 올라갑니다.</p>
+      <label class="fld" for="shareCode">공유 코드</label>
+      <input id="shareCode" autocomplete="off" spellcheck="false" style="max-width:220px">
+      <div class="row-actions" style="margin-top:10px"><button class="btn primary small" id="btnSaveCode">코드 저장</button></div>
+    </div>
+    <div class="card">
       <h2>데이터</h2>
       <p class="help">목표 리스트와 체크 표시를 지웁니다. 보유 수량은 그대로 남습니다.</p>
       <button class="btn small" id="btnClearTarget">목표 리스트 지우기</button>
@@ -275,6 +283,27 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
   </section>
 </div>
 
+<!-- share sheet -->
+<div class="sheet-bg" id="shareSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle">
+    <h2 id="shTitle">친구에게 리스트 공유</h2>
+    <p class="help" id="shInfo"></p>
+    <div id="shResult" class="hidden card" style="margin-top:8px">
+      <p class="help" style="margin-bottom:6px" id="shDone"></p>
+      <input id="shLink" readonly class="num" style="font-size:13px">
+      <div class="row-actions" style="margin-top:10px">
+        <button class="btn primary small" id="btnCopyMsg">슬랙 메시지 복사</button>
+        <button class="btn small" id="btnCopyLink">링크만 복사</button>
+        <button class="btn small" id="btnOpenLink">열어 보기</button>
+      </div>
+    </div>
+    <div class="foot">
+      <button class="btn" data-close-share>닫기</button>
+      <button class="btn" id="btnShareTest">테스트로 올리기</button>
+      <button class="btn primary" id="btnShareReal">친구용으로 올리기</button>
+    </div>
+  </div>
+</div>
 <!-- paste sheet -->
 <div class="sheet-bg" id="sheet">
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
@@ -306,7 +335,7 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 
 <script>
 /* ---------- build & error capture ---------- */
-const BUILD='build 0921-2';
+const BUILD='build 0921-3';
 function showErr(msg){try{const b=document.getElementById('errBox');b.classList.remove('hidden');b.textContent='오류: '+msg+' ('+BUILD+')';}catch(e){}}
 window.addEventListener('error',e=>showErr((e.message||'unknown')+(e.lineno?' @'+e.lineno:'')));
 window.addEventListener('unhandledrejection',e=>showErr('promise: '+((e.reason&&(e.reason.code||e.reason.message))||e.reason)));
@@ -699,15 +728,81 @@ $('btnPrice').onclick=fetchPrices;
 $('fhKey').value=settings.fhKey||'';
 $('decSel').value=String(settings.dec??2);
 function saveSettings(){try{localStorage.setItem(LS_SET,JSON.stringify(settings));}catch(e){}}
-function pushShared(){S.shared={fhKey:settings.fhKey||'',dec:settings.dec??2};save();}
+function pushShared(){S.shared={fhKey:settings.fhKey||'',dec:settings.dec??2,shareCode:shareCode()};save();}
+function shareCode(){return (S.shared&&S.shared.shareCode)||settings.shareCode||'mzb-7k2q';}
 function pullShared(){
   if(!S.shared)return;
   if(S.shared.fhKey&&S.shared.fhKey!==settings.fhKey){settings.fhKey=S.shared.fhKey;$('fhKey').value=settings.fhKey;}
   if(S.shared.dec!=null&&S.shared.dec!==settings.dec){settings.dec=S.shared.dec;$('decSel').value=String(settings.dec);}
+  if(S.shared.shareCode&&S.shared.shareCode!==settings.shareCode){settings.shareCode=S.shared.shareCode;}
+  if($('shareCode'))$('shareCode').value=shareCode();
   saveSettings();
 }
 $('decSel').onchange=()=>{settings.dec=+$('decSel').value;saveSettings();pushShared();renderAll();toast('거래 단위를 바꿨습니다');};
 $('btnSaveKey').onclick=()=>{settings.fhKey=$('fhKey').value.trim();saveSettings();pushShared();toast(settings.fhKey?'키를 저장했습니다':'키를 지웠습니다');};
+
+/* ---------- friend share ---------- */
+$('shareCode').value=shareCode();
+$('btnSaveCode').onclick=()=>{
+  const c=$('shareCode').value.trim().toLowerCase().replace(/[^a-z0-9\-]/g,'');
+  if(c.length<4||c==='mzb-test'){toast('4자 이상, mzb-test 제외');return;}
+  settings.shareCode=c;saveSettings();pushShared();$('shareCode').value=c;toast('코드를 저장했습니다');
+};
+function shareSrc(){
+  if(S.target){
+    const list=Object.entries(S.target).filter(([t])=>t!=='__date').map(([t,v])=>Object.assign({t},v)).filter(r=>r.qty>0);
+    return {label:'새 리스트(목표)',date:S.target.__date||Date.now(),list};
+  }
+  const list=Object.keys(S.holdings).map(t=>Object.assign({t,qty:S.holdings[t]},S.meta[t]||{}));
+  return {label:'현재 보유 리스트',date:S.metaDate||Date.now(),list};
+}
+function buildSnap(){
+  const src=shareSrc();
+  const sumA=src.list.reduce((s,r)=>s+(r.a||0),0), allA=src.list.every(r=>r.a>0);
+  let miss=[], live=0;
+  const items=src.list.map(r=>{
+    const pr=priceOf(r.t); if(!pr)miss.push(r.t); else if(pr.src==='live')live++;
+    const w=allA&&sumA>0?Math.round(r.a/sumA*1e6)/1e4:(r.w??null);
+    return {t:r.t,w,p:pr?Math.round(pr.v*100)/100:null,name:r.name||''};
+  }).sort((a,b)=>a.t.localeCompare(b.t));
+  return {src,items,miss,live};
+}
+function openShare(){
+  if(!fb||!FA||!FA.auth.currentUser){toast('설정 탭에서 먼저 로그인해 주세요');return;}
+  const {src,items,miss,live}=buildSnap();
+  if(!items.length){toast('공유할 리스트가 없습니다');return;}
+  const wsum=items.reduce((s,r)=>s+(+r.w||0),0);
+  $('shInfo').innerHTML=`<b>${src.label}</b>, ${dstrI(src.date)} 입력, ${items.length}종목 (비중 합계 ${wsum.toFixed(1)}%)<br>
+    가격: ${live===items.length-miss.length&&live?'실시간 시세'+(S.pricesAt?' '+relTime(S.pricesAt):''):'파이어니어 표 가격'}${live&&live<items.length?' 일부':''}. 실시간으로 올리려면 먼저 시세 불러오기를 누르세요.
+    ${miss.length?`<br><span style="color:var(--sell)">가격 없는 종목: ${miss.map(esc).join(', ')}</span>`:''}<br>
+    내 투자금과 보유 수량은 올라가지 않습니다.`;
+  $('shResult').classList.add('hidden');
+  $('shareSheet').classList.add('open');
+}
+const dstrI=t=>new Date(t).toLocaleDateString('ko-KR',{month:'long',day:'numeric'});
+let lastShare=null;
+async function doShare(code){
+  const {src,items}=buildSnap();
+  const uid=FA.auth.currentUser.uid;
+  const data={owner:uid,listDate:src.date,publishedAt:Date.now(),count:items.length,items};
+  try{await FA.D.set(FA.D.ref(FA.db,'share/'+code),data);}
+  catch(e){toast('올리지 못했습니다');$('shInfo').innerHTML+=`<br><span style="color:var(--sell)">오류: ${esc(e.code||e.message)}. Firebase 규칙에 share 칸이 있는지 확인하세요.</span>`;return;}
+  const url=location.origin+location.pathname.replace(/index\.html$/,'').replace(/\/?$/,'/')+'share.html#'+code;
+  const msg=`MZB 리밸런싱 업데이트 (${dstrI(src.date)}, ${items.length}종목)\n링크를 열고 로그인하면 내 투자금 기준으로 몇 주씩 사고팔지 나옵니다.\n${url}`;
+  lastShare={url,msg};
+  $('shLink').value=url;
+  $('shDone').textContent=(code==='mzb-test'?'테스트로 올렸습니다. 친구들은 이 링크를 모릅니다.':'친구용으로 올렸습니다. 같은 링크를 가진 친구 화면이 바로 바뀝니다.');
+  $('shResult').classList.remove('hidden');
+  toast('올렸습니다');
+}
+async function copyText(t){try{await navigator.clipboard.writeText(t);toast('복사했습니다');}catch(e){prompt('아래 내용을 복사하세요',t);}}
+$('btnShare').onclick=openShare;
+$('btnShareTest').onclick=()=>doShare('mzb-test');
+$('btnShareReal').onclick=()=>{if(confirm(`친구용 코드(${shareCode()})로 올릴까요? 친구 화면이 바로 이 리스트로 바뀝니다.`))doShare(shareCode());};
+$('btnCopyMsg').onclick=()=>lastShare&&copyText(lastShare.msg);
+$('btnCopyLink').onclick=()=>lastShare&&copyText(lastShare.url);
+$('btnOpenLink').onclick=()=>lastShare&&window.open(lastShare.url,'_blank');
+$('shareSheet').addEventListener('click',e=>{if(e.target.id==='shareSheet'||e.target.hasAttribute('data-close-share'))$('shareSheet').classList.remove('open');});
 
 /* ---------- firebase sync (Google login) ---------- */
 const FB_CFG={
