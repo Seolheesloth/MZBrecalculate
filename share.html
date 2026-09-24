@@ -191,6 +191,9 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 
 .list{--c-id:190px;--c-amt:92px;--c-wt:96px}
 @media (max-width:480px){.list{--c-id:72px;--c-amt:62px;--c-wt:58px}}
+.tgt,.tgt .act,.tgt .sh,.tgt .hold{white-space:nowrap}
+.pos{grid-template-columns:24px var(--c-id) var(--c-amt) var(--c-wt) minmax(100px,1fr) 32px}
+@media (max-width:480px){.pos{grid-template-columns:16px var(--c-id) var(--c-amt) var(--c-wt) minmax(86px,1fr) 26px}}
 .notice{background:var(--buy-soft);color:var(--buy);border-radius:10px;padding:12px 14px;font-size:14px;font-weight:500;margin-bottom:12px}
 </style>
 </head>
@@ -211,7 +214,7 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 <div class="toast" id="toast" role="status"></div>
 <script>
 /* ---------- helpers ---------- */
-const BUILD='share build 0921-1';
+const BUILD='share build 0924-1';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const r4=n=>Math.round((+n||0)*1e4)/1e4;
@@ -236,6 +239,41 @@ try{const v=JSON.parse(localStorage.getItem(LS));if(v)U=Object.assign(blankU(),v
 let SH=null;          // shared list
 let user=null, FA=null, uRef=null, phase='loading', editAmt=false, tab='trade';
 const rq=n=>{const k=10**(U.dec??2);return Math.round((+n||0)*k)/k;};
+function tsort(){let t=U.sort;if(!t||typeof t!=='object')t={k:typeof t==='string'?t:'t',d:1};return t;}
+const LSC='mzbShare:cols';
+const COL_DEF={desk:{id:200,amt:104,wt:62},mob:{id:80,amt:66,wt:40}};
+let COLS={};try{COLS=JSON.parse(localStorage.getItem(LSC))||{};}catch(e){}
+const isMob=()=>matchMedia('(max-width:480px)').matches;
+function colW(){const m=isMob()?'mob':'desk';COLS[m]=COLS[m]||{};return COLS[m];}
+function saveCols(){try{localStorage.setItem(LSC,JSON.stringify(COLS));}catch(e){}}
+function applyCols(){
+  const m=isMob()?'mob':'desk', w=Object.assign({},COL_DEF[m],colW());
+  document.querySelectorAll('.list').forEach(l=>{l.style.setProperty('--c-id',w.id+'px');l.style.setProperty('--c-amt',w.amt+'px');l.style.setProperty('--c-wt',w.wt+'px');});
+}
+function bindTable(){
+  document.querySelectorAll('[data-hk]').forEach(b=>b.onclick=()=>{
+    const cur=tsort(),k=b.dataset.hk;
+    U.sort=cur.k===k?{k,d:-cur.d}:{k,d:k==='t'?1:-1};saveU();render();
+  });
+  document.querySelectorAll('[data-rz]').forEach(h=>h.onpointerdown=e=>{
+    e.preventDefault();e.stopPropagation();
+    const c=h.dataset.rz, cell=h.parentElement, x0=e.clientX, w0=cell.getBoundingClientRect().width;
+    const min={id:56,amt:52,wt:34}[c];
+    h.setPointerCapture(e.pointerId);h.classList.add('on');document.body.classList.add('resizing');
+    const mv=ev=>{colW()[c]=Math.max(min,Math.round(w0+ev.clientX-x0));applyCols();};
+    const up=()=>{h.releasePointerCapture(e.pointerId);h.classList.remove('on');document.body.classList.remove('resizing');
+      h.removeEventListener('pointermove',mv);h.removeEventListener('pointerup',up);h.removeEventListener('pointercancel',up);saveCols();};
+    h.addEventListener('pointermove',mv);h.addEventListener('pointerup',up);h.addEventListener('pointercancel',up);
+    h.ondblclick=()=>{delete colW()[c];applyCols();saveCols();};
+  });
+  applyCols();
+}
+function posHead(){
+  const {k,d}=tsort();
+  const hs=(key,label)=>`<button class="hs" data-hk="${key}"${k===key?` aria-sort="${d>0?'ascending':'descending'}"`:''}>${label}<span class="arr">${k===key?(d>0?'▲':'▼'):'▲▼'}</span></button>`;
+  const rz=c=>`<span class="rz" data-rz="${c}" title="드래그해서 칸 너비 조절"></span>`;
+  return `<div class="pos head"><div></div><div class="id">${hs('t','종목')}${rz('id')}</div><div class="amt r">${hs('a','<span class="lg">배분 </span>금액')}${rz('amt')}</div><div class="wt r">${hs('w','비중')}${rz('wt')}</div><div class="r">${hs('tg','주식 수')}</div><div></div></div>`;
+}
 function saveU(){
   U.updatedAt=Date.now();
   try{localStorage.setItem(LS,JSON.stringify(U));}catch(e){}
@@ -260,7 +298,15 @@ function rows(){
     out.push({t,name:x?x.name||'':'',w:x&&x.w!=null?Math.round(+x.w*10)/10:null,p,tgAmt:x?tgAmt:null,cur,tg,d,kind,tag});
   });
   const g=r=>r.kind==='sell'?0:r.kind==='buy'?1:2;
-  return out.sort((a,b)=>U.sort==='act'?(g(a)-g(b)||Math.abs(b.d||0)*(b.p||1)-Math.abs(a.d||0)*(a.p||1)||a.t.localeCompare(b.t)):a.t.localeCompare(b.t));
+  const {k,d}=tsort();
+  const num=(x,y)=>(x==null&&y==null)?0:x==null?1:y==null?-1:(x-y)*d;
+  return out.sort((a,b)=>{
+    if(k==='act')return g(a)-g(b)||Math.abs(b.d||0)*(b.p||1)-Math.abs(a.d||0)*(a.p||1)||a.t.localeCompare(b.t);
+    if(k==='a')return num(a.tgAmt,b.tgAmt)||a.t.localeCompare(b.t);
+    if(k==='w')return num(a.w,b.w)||a.t.localeCompare(b.t);
+    if(k==='tg')return num(a.tg,b.tg)||a.t.localeCompare(b.t);
+    return a.t.localeCompare(b.t)*d;
+  });
 }
 
 /* ---------- render ---------- */
@@ -301,17 +347,17 @@ function render(){
       <button class="btn small" id="btnEditAmt">금액 수정</button></div>
     <p class="headline" style="margin-top:12px">${acts.length?`매수 ${buys.length}종목, 매도 ${sells.length}종목`:(Object.keys(U.holdings).length?'모든 종목이 일치합니다':'')}</p>
     ${acts.length?`<p class="meta">완료 ${nDone}/${acts.length}</p><div class="money num"><div>매도 대금<strong>${fmt$(sl)}</strong></div><div>매수 필요<strong>${fmt$(bu)}</strong></div><div>현금 변화<strong style="color:var(${sl-bu>=0?'--buy':'--sell'})">${sl-bu>=0?'+':''}${fmt$(sl-bu)}</strong></div></div>`:''}</div>`;
-  h+=`<div class="sortbar"><button id="btnSort" aria-pressed="${U.sort==='act'}">매매할 종목 먼저 보기</button></div>`;
-  h+=`<div class="list"><div class="pos head"><div></div><div>종목</div><div class="r">가격</div><div class="r">목표 금액</div><div class="r">주식 수</div><div></div></div>`;
+  h+=`<div class="sortbar"><button id="btnSort" aria-pressed="${tsort().k==='act'}">매매할 종목 먼저 보기</button></div>`;
+  h+=`<div class="list">`+posHead();
   R.forEach((r,i)=>{
     const act=r.kind==='buy'||r.kind==='sell', done=!!U.done[r.t];
     const tag=r.tag==='new'?'<span class="tag new">신규</span>':r.tag==='out'?'<span class="tag out">편출</span>':'';
     const actLine=r.kind==='na'?'<div class="act ok">가격 없음</div>':act?`<div class="act ${r.kind}">${r.d>0?'+':'−'}${fq(Math.abs(r.d))} <small>${r.kind==='buy'?'매수':'매도'}</small></div>`:`<div class="act ok">✓ 일치</div>`;
     h+=`<div class="pos ${act&&done?'done':''} ${act?'':'same'}">
       <div class="no num">${i+1}</div>
-      <div class="id"><div><span class="tk">${esc(r.t)}</span>${tag}</div>${r.name?`<div class="nm">${esc(r.name)}</div>`:''}</div>
-      <div class="amt num">${r.p?fmt$c(r.p):''}</div>
-      <div class="wt num">${r.tgAmt!=null?fmt$(r.tgAmt):''}${r.w!=null?`<div class="nm" style="text-align:right">${r.w}%</div>`:''}</div>
+      <div class="id"><div><span class="tk">${esc(r.t)}</span>${tag}</div>${(r.name||r.p)?`<div class="nm">${esc(r.name)}${r.p?`${r.name?' ':''}<span class="num">${fmt$c(r.p)}</span>`:''}</div>`:''}</div>
+      <div class="amt num">${r.tgAmt!=null?fmt$c(r.tgAmt):''}</div>
+      <div class="wt num">${r.w!=null?r.w+'%':''}</div>
       <div class="tgt num"><div class="sh"><b>${r.tg==null?'—':fq(r.tg)}</b><span>주</span></div><div class="hold">보유 ${fq(r.cur)}</div>${actLine}</div>
       <div class="ck">${act?`<button class="check" data-done="${esc(r.t)}" aria-pressed="${done}" aria-label="${esc(r.t)} 완료">✓</button>`:''}</div></div>`;
   });
@@ -319,9 +365,10 @@ function render(){
   if(acts.length||!Object.keys(U.holdings).length)h+=`<div class="apply-bar"><button class="btn primary" id="btnApply">${Object.keys(U.holdings).length?'매매 끝 — 보유 수량 갱신':'매수 끝 — 보유로 저장'}</button></div>`;
   v.innerHTML=h;
   $('btnEditAmt').onclick=()=>{editAmt=true;render();};
-  $('btnSort').onclick=()=>{U.sort=U.sort==='act'?'t':'act';saveU();render();};
+  $('btnSort').onclick=()=>{U.sort=tsort().k==='act'?{k:'t',d:1}:{k:'act',d:1};saveU();render();};
   v.querySelectorAll('[data-done]').forEach(b=>b.onclick=()=>{const t=b.dataset.done;if(U.done[t])delete U.done[t];else U.done[t]=true;saveU();render();});
   if($('btnApply'))$('btnApply').onclick=apply;
+  bindTable();
 }
 function apply(){
   const R=rows(), acts=R.filter(r=>r.kind==='buy'||r.kind==='sell');
