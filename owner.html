@@ -222,6 +222,7 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
       <h2>현재 보유 수량</h2>
       <p class="help">이 전략으로 들고 있는 종목만 입력하세요. 매매를 마친 뒤 조정 화면에서 “보유 수량 갱신”을 누르면 자동으로 바뀝니다.</p>
       <div class="row-actions">
+        <button class="btn primary small" id="btnShot">스크린샷으로 갱신</button>
         <button class="btn small" id="btnAddHold">종목 추가</button>
         <button class="btn small" id="btnPasteHold">붙여넣기로 입력</button>
       </div>
@@ -300,6 +301,28 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 </div>
 
 <!-- share sheet -->
+<div class="sheet-bg" id="shotSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shotTitle">
+    <h2 id="shotTitle">스크린샷으로 보유 갱신</h2>
+    <p class="help">증권사 보유 화면을 캡처해 <b>Ctrl+V</b>로 붙여넣으세요. 여러 장이면 계속 붙여넣으면 누적됩니다. 이미지는 저장되지 않고 종목과 수량만 읽습니다.</p>
+    <div id="shotDrop" tabindex="0" style="border:1px dashed var(--line);border-radius:10px;padding:22px 14px;text-align:center;color:var(--muted);font-size:14px;cursor:pointer">
+      Ctrl+V 로 붙여넣기 · 또는 여기를 눌러 파일 선택
+      <input type="file" id="shotFile" accept="image/*" multiple style="display:none">
+    </div>
+    <p class="status" id="shotStatus"></p>
+    <div id="shotResult" class="hidden">
+      <div class="tbl" style="margin-top:8px"><div class="tbl-scroll"><table>
+        <thead><tr><th class="no"></th><th>종목</th><th style="text-align:right">기존</th><th style="text-align:right">읽은 값</th><th></th></tr></thead>
+        <tbody id="shotBody"></tbody>
+      </table></div></div>
+    </div>
+    <div class="foot">
+      <button class="btn" data-close-shot>닫기</button>
+      <button class="btn" id="btnShotReplace">전체 교체</button>
+      <button class="btn primary" id="btnShotApply">읽은 종목만 갱신</button>
+    </div>
+  </div>
+</div>
 <div class="sheet-bg" id="shareSheet">
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle">
     <h2 id="shTitle">친구에게 리스트 공유</h2>
@@ -351,7 +374,7 @@ label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 
 <script>
 /* ---------- build & error capture ---------- */
-const BUILD='owner build 1026-1';
+const BUILD='owner build 1105-1';
 function showErr(msg){try{const b=document.getElementById('errBox');b.classList.remove('hidden');b.textContent='오류: '+msg+' ('+BUILD+')';}catch(e){}}
 window.addEventListener('error',e=>showErr((e.message||'unknown')+(e.lineno?' @'+e.lineno:'')));
 window.addEventListener('unhandledrejection',e=>showErr('promise: '+((e.reason&&(e.reason.code||e.reason.message))||e.reason)));
@@ -770,6 +793,134 @@ function pullShared(){
 }
 $('decSel').onchange=()=>{settings.dec=+$('decSel').value;saveSettings();pushShared();renderAll();toast('거래 단위를 바꿨습니다');};
 $('btnSaveKey').onclick=()=>{settings.fhKey=$('fhKey').value.trim();saveSettings();pushShared();toast(settings.fhKey?'키를 저장했습니다':'키를 지웠습니다');};
+
+/* ---------- screenshot → holdings (Claude vision via ledger Worker) ---------- */
+const WORKER_URL='https://ledger-vision.peterconcept.workers.dev';
+const LEDGER_CFG={apiKey:"AIzaSyCJ5tNeBsRTd72OUelSGm_dRKu3uo-V7q4",authDomain:"portfolio-ledger-b6b09.firebaseapp.com",projectId:"portfolio-ledger-b6b09",storageBucket:"portfolio-ledger-b6b09.firebasestorage.app",messagingSenderId:"228495497815",appId:"1:228495497815:web:aa06cb0ebe7291f2326112"};
+const SHOT_PROMPT=`첨부된 이미지는 미국 증권 계좌 앱의 보유 종목(holdings/positions) 화면 스크린샷입니다.
+화면에 보이는 종목과 보유 주식 수만 아래 JSON 형식으로만 답하세요. 다른 설명, 코드블록 표시, 인사말은 절대 포함하지 마세요.
+
+형식: {"holdings":[{"ticker":"티커심볼","name":"종목명","quantity":숫자}]}
+
+규칙:
+- ticker: AAPL, NVDA 같은 티커 심볼. 화면에 티커가 없고 회사명만 있으면 빈 문자열로 두고 name만 채우세요.
+- quantity: 보유 주식 수(Quantity, Shares). 소수점 주식(예: 3.4567주)이면 소수점을 그대로 유지하세요.
+- 평가금액, 단가, 손익, 비중은 넣지 마세요. 수량만 필요합니다.
+- 현금(Cash, Core position, 예수금)은 종목이 아니므로 넣지 마세요.
+- 수량을 확실히 읽을 수 없는 줄은 아예 빼세요.
+- 달러 기호와 콤마는 제외하고 숫자만 넣으세요.`;
+let VA=null, shotRead={}, shotBusy=false;
+async function visionAuth(){
+  if(VA&&VA.auth.currentUser)return VA.auth.currentUser;
+  $('shotStatus').textContent='원장 앱 계정으로 로그인 중…';
+  if(!VA){
+    const base=`https://www.gstatic.com/firebasejs/${FBV}/`;
+    const [A,U]=await Promise.all([import(base+'firebase-app.js'),import(base+'firebase-auth.js')]);
+    const app=A.getApps().find(a=>a.name==='vision')||A.initializeApp(LEDGER_CFG,'vision');
+    let auth;try{auth=U.initializeAuth(app,{persistence:[U.indexedDBLocalPersistence,U.browserLocalPersistence],popupRedirectResolver:U.browserPopupRedirectResolver});}catch(e){auth=U.getAuth(app);}
+    VA={U,auth};
+    await new Promise(res=>{const un=U.onAuthStateChanged(auth,()=>{un();res();});});
+  }
+  if(VA.auth.currentUser)return VA.auth.currentUser;
+  const prov=new VA.U.GoogleAuthProvider();
+  await VA.U.signInWithPopup(VA.auth,prov);
+  return VA.auth.currentUser;
+}
+function resizeImg(file,maxDim=2000,q=0.92){
+  return new Promise((res,rej)=>{
+    const fr=new FileReader();fr.onerror=rej;
+    fr.onload=e=>{const img=new Image();img.onerror=rej;img.onload=()=>{
+      let{width:w,height:h}=img;
+      if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
+      const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
+      res(c.toDataURL('image/jpeg',q));};img.src=e.target.result;};
+    fr.readAsDataURL(file);
+  });
+}
+async function readShot(file){
+  const u=await visionAuth();
+  const tok=await u.getIdToken();
+  const dataUrl=await resizeImg(file);
+  const resp=await fetch(WORKER_URL+'/read',{method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+    body:JSON.stringify({image:dataUrl.split(',')[1],mediaType:'image/jpeg',prompt:SHOT_PROMPT})});
+  if(!resp.ok){
+    const d=await resp.text().catch(()=>'');
+    if(resp.status===401||resp.status===403)throw new Error('인증 실패 — 원장 앱 계정 확인이 필요합니다'+(d?' ('+d.slice(0,60)+')':''));
+    if(resp.status===429)throw new Error('요청이 너무 잦습니다. 잠시 후 다시 시도하세요');
+    throw new Error('서버 오류 '+resp.status+(d?' · '+d.slice(0,60):''));
+  }
+  const data=await resp.json();
+  const block=(data.content||[]).find(b=>b.type==='text');
+  if(!block)throw new Error('응답 없음');
+  let raw=block.text.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+  const parsed=JSON.parse(raw);
+  const arr=Array.isArray(parsed)?parsed:(parsed.holdings||[]);
+  if(!Array.isArray(arr))throw new Error('형식 오류');
+  const out={};
+  arr.forEach(h=>{
+    const t=cleanT(h.ticker||h.name||'');const q=Number(h.quantity);
+    if(t&&isFinite(q)&&q>0)out[t]=r4(q);
+  });
+  return out;
+}
+async function handleShots(files){
+  if(shotBusy)return;
+  const list=[...files].filter(f=>f&&f.type&&f.type.startsWith('image/'));
+  if(!list.length)return;
+  shotBusy=true;
+  try{
+    for(let i=0;i<list.length;i++){
+      $('shotStatus').textContent=`읽는 중… (${i+1}/${list.length})`;
+      const got=await readShot(list[i]);
+      Object.assign(shotRead,got);
+    }
+    const n=Object.keys(shotRead).length;
+    $('shotStatus').textContent=n?`${n}종목을 읽었습니다. 아래에서 확인하고 적용하세요.`:'종목을 찾지 못했습니다. 보유 목록이 보이게 다시 캡처해 주세요.';
+    renderShot();
+  }catch(e){$('shotStatus').textContent='읽지 못했습니다: '+((e&&e.message)||e);}
+  shotBusy=false;
+}
+function renderShot(){
+  const ts=Object.keys(shotRead).sort();
+  $('shotResult').classList.toggle('hidden',!ts.length);
+  $('shotBody').innerHTML=ts.map((t,i)=>{
+    const cur=S.holdings[t], same=cur!=null&&Math.abs(r4(cur)-shotRead[t])<1e-9;
+    return `<tr><td class="no">${i+1}</td><td><span class="tk" style="font-size:15px">${esc(t)}</span></td>
+      <td class="num mut" style="text-align:right">${cur!=null?fq(cur):'—'}</td>
+      <td class="num" style="text-align:right;${same?'':'font-weight:700;color:var(--buy)'}">${fq(shotRead[t])}</td>
+      <td class="x"><button class="xbtn" data-shotdel="${esc(t)}" aria-label="제외">×</button></td></tr>`;
+  }).join('');
+  $('shotBody').querySelectorAll('[data-shotdel]').forEach(b=>b.onclick=()=>{delete shotRead[b.dataset.shotdel];renderShot();});
+}
+function openShot(){
+  shotRead={};$('shotStatus').textContent='';$('shotResult').classList.add('hidden');$('shotBody').innerHTML='';
+  $('shotSheet').classList.add('open');setTimeout(()=>$('shotDrop').focus(),50);
+}
+function closeShot(){$('shotSheet').classList.remove('open');}
+$('btnShot').onclick=openShot;
+$('shotDrop').onclick=()=>$('shotFile').click();
+$('shotFile').onchange=e=>{handleShots(e.target.files);e.target.value='';};
+$('shotSheet').addEventListener('click',e=>{if(e.target.id==='shotSheet'||e.target.hasAttribute('data-close-shot'))closeShot();});
+document.addEventListener('paste',e=>{
+  if(!$('shotSheet').classList.contains('open'))return;
+  const items=[...(e.clipboardData&&e.clipboardData.items||[])];
+  const files=items.filter(i=>i.kind==='file'&&i.type.startsWith('image/')).map(i=>i.getAsFile());
+  if(files.length){e.preventDefault();handleShots(files);}
+});
+function applyShot(replaceAll){
+  const ts=Object.keys(shotRead);
+  if(!ts.length){toast('읽은 종목이 없습니다');return;}
+  if(replaceAll){
+    const gone=Object.keys(S.holdings).filter(t=>!(t in shotRead));
+    if(gone.length&&!confirm(`읽히지 않은 ${gone.length}종목(${gone.slice(0,5).join(', ')}${gone.length>5?'…':''})을 삭제할까요?`))return;
+    S.holdings={};
+  }
+  ts.forEach(t=>{S.holdings[t]=shotRead[t];});
+  save();renderAll();closeShot();toast(`${ts.length}종목을 반영했습니다`);
+}
+$('btnShotApply').onclick=()=>applyShot(false);
+$('btnShotReplace').onclick=()=>applyShot(true);
 
 /* ---------- seed / import ---------- */
 function setSeedUI(){$('seedIn').value=S.seed||'';}
